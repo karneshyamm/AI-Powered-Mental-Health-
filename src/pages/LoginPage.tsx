@@ -20,7 +20,11 @@ export default function LoginPage() {
       await signInWithEmailAndPassword(auth, email, password);
       navigate("/dashboard");
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === "auth/operation-not-allowed") {
+        setError("Email/Password sign-in is not enabled in your Firebase Console. Please enable it in Authentication > Sign-in method.");
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -44,6 +48,9 @@ export default function LoginPage() {
         {error && (
           <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100">
             {error}
+            <div className="mt-2 pt-2 border-t border-red-200 text-[10px] opacity-70">
+              Debug: Connecting to Project ID "{auth.app.options.projectId}"
+            </div>
           </div>
         )}
 

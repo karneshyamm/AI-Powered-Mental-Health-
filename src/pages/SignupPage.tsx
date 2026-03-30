@@ -40,7 +40,11 @@ export default function SignupPage() {
       
       navigate("/dashboard");
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === "auth/operation-not-allowed") {
+        setError("Email/Password sign-up is not enabled in your Firebase Console. Please enable it in Authentication > Sign-in method.");
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
