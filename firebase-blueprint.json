@@ -1,0 +1,55 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "age": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "MoodEntry": {
+      "title": "Mood Entry",
+      "description": "Daily mood tracking entry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "mood": { "type": "string", "enum": ["happy", "sad", "anxious", "stressed", "neutral"] },
+        "note": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "mood", "timestamp"]
+    },
+    "JournalEntry": {
+      "title": "Journal Entry",
+      "description": "User journaling entry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "content": { "type": "string" },
+        "sentiment": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "content", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/users/{uid}/moods/{moodId}": {
+      "schema": "MoodEntry",
+      "description": "User mood history"
+    },
+    "/users/{uid}/journals/{journalId}": {
+      "schema": "JournalEntry",
+      "description": "User journal entries"
+    }
+  }
+}
