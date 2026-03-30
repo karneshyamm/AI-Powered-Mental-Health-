@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route, Link, useLocation, useNavigate } from "react-router-dom";
 import { auth } from "../firebase";
-import { signOut } from "firebase/auth";
+import { signOut, deleteUser, updateProfile } from "firebase/auth";
 import { motion } from "motion/react";
 import { 
   LayoutDashboard, 
@@ -16,8 +16,7 @@ import {
   Trash2,
   AlertTriangle
 } from "lucide-react";
-import { deleteUser } from "firebase/auth";
-import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { collection, query, orderBy, limit, onSnapshot, setDoc, doc } from "firebase/firestore";
 import { db } from "../firebase";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
 import ChatAI from "../components/ChatAI";
@@ -368,6 +367,28 @@ function HelpPage() {
 function SettingsPage() {
   const navigate = useNavigate();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [displayName, setDisplayName] = useState(auth.currentUser?.displayName || "");
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const handleUpdateProfile = async () => {
+    if (!auth.currentUser || !displayName.trim()) return;
+    setIsUpdating(true);
+    setUpdateMessage(null);
+    try {
+      await updateProfile(auth.currentUser, { displayName });
+      // Also update in Firestore
+      await setDoc(doc(db, "users", auth.currentUser.uid), {
+        name: displayName
+      }, { merge: true });
+      setUpdateMessage({ type: 'success', text: 'Profile updated successfully!' });
+    } catch (error) {
+      console.error("Update Profile Error:", error);
+      setUpdateMessage({ type: 'error', text: 'Failed to update profile. Please try again.' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const handleDeleteAccount = async () => {
     const user = auth.currentUser;
@@ -387,11 +408,19 @@ function SettingsPage() {
       <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm">
         <h2 className="text-2xl font-bold mb-6">Account Settings</h2>
         <div className="space-y-6 max-w-md">
+          {updateMessage && (
+            <div className={`p-4 rounded-xl text-sm font-bold ${
+              updateMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'
+            }`}>
+              {updateMessage.text}
+            </div>
+          )}
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Display Name</label>
             <input 
               type="text" 
-              defaultValue={auth.currentUser?.displayName || ""} 
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
               className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
@@ -404,8 +433,12 @@ function SettingsPage() {
               className="w-full px-4 py-3 bg-gray-100 border border-gray-100 rounded-xl text-gray-500"
             />
           </div>
-          <button className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all">
-            Save Changes
+          <button 
+            onClick={handleUpdateProfile}
+            disabled={isUpdating || !displayName.trim()}
+            className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
+          >
+            {isUpdating ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>

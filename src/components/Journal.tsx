@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { collection, addDoc, query, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, addDoc, query, orderBy, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { motion, AnimatePresence } from "motion/react";
 import { Book, Plus, Calendar, Trash2, Search, Brain } from "lucide-react";
@@ -69,6 +69,16 @@ export default function Journal() {
     } finally {
       setLoading(false);
       setAnalyzing(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/journals`;
+    try {
+      await deleteDoc(doc(db, path, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
     }
   };
 
@@ -158,6 +168,16 @@ export default function Journal() {
                   {entry.sentiment}
                 </span>
               </div>
+              <button 
+                onClick={() => {
+                  if (window.confirm("Are you sure you want to delete this entry?")) {
+                    handleDelete(entry.id);
+                  }
+                }}
+                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
             <p className="text-gray-700 leading-relaxed line-clamp-3">{entry.content}</p>
             {entry.summary && (
