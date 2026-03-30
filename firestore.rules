@@ -1,23 +1,135 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - displayName: string (optional, max 100)
+    //   - email: string (required, email format)
+    //   - age: number (optional, >= 0)
+    //   - createdAt: string (optional, ISO 8601)
+    //
+    // Collection: /users/{userId}/moods/{moodId}
+    // Fields:
+    //   - userId: string (required, immutable)
+    //   - mood: string (required, enum: happy, sad, anxious, stressed, neutral)
+    //   - note: string (optional, max 500)
+    //   - timestamp: string (required, ISO 8601, immutable)
+    //
+    // Collection: /users/{userId}/journals/{journalId}
+    // Fields:
+    //   - userId: string (required, immutable)
+    //   - content: string (required, max 5000)
+    //   - sentiment: string (optional, max 50)
+    //   - summary: string (optional, max 200)
+    //   - timestamp: string (required, ISO 8601, immutable)
+    //
+    // ===============================================================
+
+    // ===============================================================
     // Helper Functions
+    // ===============================================================
+    
     function isAuthenticated() {
       return request.auth != null;
     }
     
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
     function isAdmin() {
       return isAuthenticated() &&
         (request.auth.token.email == "shyam.karnee@gmail.com" || 
          request.auth.token.email == "shyam@gmail.com");
     }
 
-    // Recursive match for user data
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasOnlyAllowedFields(data, fields) {
+      return data.keys().hasOnly(fields);
+    }
+
+    function hasRequiredFields(data, fields) {
+      return data.keys().hasAll(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(data, ['uid', 'displayName', 'email', 'age', 'createdAt', 'name']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 128 &&
+             isValidEmail(data.email) &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('name' in data) || (data.name is string && data.name.size() < 100)) &&
+             (!('age' in data) || (data.age is number && data.age >= 0)) &&
+             (!('createdAt' in data) || isValidDateString(data.createdAt));
+    }
+
+    function isValidMood(data) {
+      let validMoods = ["happy", "sad", "anxious", "stressed", "neutral"];
+      return hasOnlyAllowedFields(data, ['userId', 'mood', 'note', 'timestamp']) &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.mood in validMoods &&
+             (!('note' in data) || (data.note is string && data.note.size() < 500)) &&
+             isValidDateString(data.timestamp);
+    }
+
+    function isValidJournal(data) {
+      return hasOnlyAllowedFields(data, ['userId', 'content', 'sentiment', 'summary', 'timestamp']) &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
+             (!('sentiment' in data) || (data.sentiment is string && data.sentiment.size() < 50)) &&
+             (!('summary' in data) || (data.summary is string && data.summary.size() < 200)) &&
+             isValidDateString(data.timestamp);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
     match /users/{userId} {
-      allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
-      
-      match /{allPaths=**} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.uid == userId;
+      allow update: if (isOwner(userId) || isAdmin()) && 
+                      isValidUser(request.resource.data) && 
+                      request.resource.data.uid == resource.data.uid;
+      allow delete: if isAdmin();
+
+      match /moods/{moodId} {
+        allow list, get: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidMood(request.resource.data) && request.resource.data.userId == userId;
+        allow update: if (isOwner(userId) || isAdmin()) && 
+                        isValidMood(request.resource.data) && 
+                        request.resource.data.userId == resource.data.userId &&
+                        request.resource.data.timestamp == resource.data.timestamp;
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /journals/{journalId} {
+        allow list, get: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidJournal(request.resource.data) && request.resource.data.userId == userId;
+        allow update: if (isOwner(userId) || isAdmin()) && 
+                        isValidJournal(request.resource.data) && 
+                        request.resource.data.userId == resource.data.userId &&
+                        request.resource.data.timestamp == resource.data.timestamp;
+        allow delete: if isOwner(userId) || isAdmin();
       }
     }
 

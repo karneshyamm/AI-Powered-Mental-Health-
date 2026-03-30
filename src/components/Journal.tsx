@@ -4,7 +4,7 @@ import { db, auth } from "../firebase";
 import { motion, AnimatePresence } from "motion/react";
 import { Book, Plus, Calendar, Trash2, Search, Brain } from "lucide-react";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
-import { ai, MODELS } from "../lib/gemini";
+import { getAI, MODELS } from "../lib/gemini";
 
 export default function Journal() {
   const [entries, setEntries] = useState<any[]>([]);
@@ -33,10 +33,20 @@ export default function Journal() {
 
   const handleSave = async () => {
     if (!content.trim() || !auth.currentUser) return;
+
+    // Check for API key selection if platform tools are available
+    if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+      const hasKey = await window.aistudio.hasSelectedApiKey();
+      if (!hasKey) {
+        await window.aistudio.openSelectKey();
+      }
+    }
+
     setLoading(true);
     setAnalyzing(true);
     
     try {
+      const ai = getAI();
       // Analyze sentiment via Gemini directly
       const response = await ai.models.generateContent({
         model: MODELS.ANALYSIS,
@@ -63,9 +73,21 @@ export default function Journal() {
       
       setContent("");
       setIsWriting(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Sentiment Analysis Error:", error);
-      handleFirestoreError(error, OperationType.CREATE, `users/${auth.currentUser?.uid}/journals`);
+      
+      // Handle "Requested entity was not found" by prompting for key selection again
+      if (error?.message?.includes("Requested entity was not found") || error?.message?.includes("API_KEY_INVALID") || error?.message?.includes("API key not found")) {
+        if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+          await window.aistudio.openSelectKey();
+        }
+      }
+
+      if (error?.message?.includes("API_KEY_INVALID") || error?.message?.includes("API key not found")) {
+        alert("AI features are currently unavailable. Please ensure the Gemini API key is correctly configured.");
+      } else {
+        handleFirestoreError(error, OperationType.CREATE, `users/${auth.currentUser?.uid}/journals`);
+      }
     } finally {
       setLoading(false);
       setAnalyzing(false);

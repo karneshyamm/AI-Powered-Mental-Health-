@@ -1,7 +1,16 @@
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Send, Bot, User, Sparkles, AlertTriangle } from "lucide-react";
-import { ai, MODELS } from "../lib/gemini";
+import { getAI, MODELS } from "../lib/gemini";
+
+declare global {
+  interface Window {
+    aistudio?: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
+}
 
 interface Message {
   role: "user" | "ai";
@@ -14,7 +23,28 @@ export default function ChatAI() {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const checkApiKey = async () => {
+    if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+      const hasKey = await window.aistudio.hasSelectedApiKey();
+      setHasApiKey(hasKey);
+      return hasKey;
+    }
+    return true; // Assume true if tool is not available
+  };
+
+  useEffect(() => {
+    checkApiKey();
+  }, []);
+
+  const handleConnectAI = async () => {
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      await window.aistudio.openSelectKey();
+      await checkApiKey();
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -28,38 +58,61 @@ export default function ChatAI() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
+    // Proactively check for API key if using platform tools
+    if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+      const hasKey = await window.aistudio.hasSelectedApiKey();
+      if (!hasKey) {
+        await window.aistudio.openSelectKey();
+        await checkApiKey();
+      }
+    }
+
     const userMessage = input.trim();
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
     try {
-      const history = messages.slice(-10).map(m => ({
-        role: m.role === "user" ? "user" : "model",
-        parts: [{ text: m.content }]
-      }));
+      const ai = getAI();
+      // Gemini API requires history to start with a 'user' role and alternate roles.
+      // We use the messages already in state (which is the state BEFORE the current user message).
+      // We exclude the very first AI greeting to ensure history starts with a user message.
+      const history = messages
+        .filter((m, i) => !(i === 0 && m.role === "ai"))
+        .map(m => ({
+          role: m.role === "user" ? "user" : "model",
+          parts: [{ text: m.content }]
+        }));
 
       const response = await ai.models.generateContent({
         model: MODELS.CHAT,
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: "You are Serenity, a compassionate and supportive mental health companion. Your goal is to provide emotional support, use CBT techniques to help users reframe negative thoughts, and offer mindfulness suggestions. If you detect any signs of self-harm or crisis, you MUST provide emergency resources and encourage the user to seek professional help immediately. Keep your responses concise, warm, and empathetic." }]
-          },
-          ...history,
-          {
-            role: "user",
-            parts: [{ text: userMessage }]
-          }
-        ],
+        contents: history,
+        config: {
+          systemInstruction: "You are Serenity, a compassionate and supportive mental health companion. Your goal is to provide emotional support, use CBT techniques to help users reframe negative thoughts, and offer mindfulness suggestions. If you detect any signs of self-harm or crisis, you MUST provide emergency resources and encourage the user to seek professional help immediately. Keep your responses concise, warm, and empathetic.",
+        }
       });
 
       if (response.text) {
         setMessages(prev => [...prev, { role: "ai", content: response.text }]);
       }
-    } catch (error) {
-      console.error("Chat Error:", error);
-      setMessages(prev => [...prev, { role: "ai", content: "I'm sorry, I'm having trouble connecting right now. Please try again in a moment." }]);
+    } catch (error: any) {
+      console.error("Chat Error Details:", error);
+      
+      // Handle "Requested entity was not found" by prompting for key selection again
+      if (error?.message?.includes("Requested entity was not found") || error?.message?.includes("API_KEY_INVALID") || error?.message?.includes("API key not found")) {
+        if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+          await window.aistudio.openSelectKey();
+          await checkApiKey();
+        }
+      }
+
+      let errorMessage = "I'm sorry, I'm having trouble connecting right now. Please try again in a moment.";
+      
+      if (error?.message?.includes("API_KEY_INVALID") || error?.message?.includes("API key not found")) {
+        errorMessage = "AI features are currently unavailable. Please ensure the Gemini API key is correctly configured in the environment.";
+      }
+      
+      setMessages(prev => [...prev, { role: "ai", content: errorMessage }]);
     } finally {
       setIsLoading(false);
     }
@@ -81,9 +134,20 @@ export default function ChatAI() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full border border-emerald-100 text-emerald-600 text-xs font-bold">
-          <Sparkles className="w-3 h-3" />
-          CBT Support Active
+        <div className="flex items-center gap-2">
+          {hasApiKey === false && (
+            <button
+              onClick={handleConnectAI}
+              className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-full border border-amber-100 text-xs font-bold hover:bg-amber-100 transition-all"
+            >
+              <AlertTriangle className="w-3 h-3" />
+              Connect AI Key
+            </button>
+          )}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full border border-emerald-100 text-emerald-600 text-xs font-bold">
+            <Sparkles className="w-3 h-3" />
+            CBT Support Active
+          </div>
         </div>
       </div>
 
