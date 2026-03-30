@@ -27,12 +27,18 @@ export default function ChatAI() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const checkApiKey = async () => {
+    // Only check if we are in the AI Studio environment
     if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
       const hasKey = await window.aistudio.hasSelectedApiKey();
       setHasApiKey(hasKey);
       return hasKey;
     }
-    return true; // Assume true if tool is not available
+    
+    // Outside AI Studio, we check for the environment variable directly
+    const envKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const hasEnvKey = !!envKey;
+    setHasApiKey(hasEnvKey);
+    return hasEnvKey;
   };
 
   useEffect(() => {
@@ -86,7 +92,13 @@ export default function ChatAI() {
 
       const response = await ai.models.generateContent({
         model: MODELS.CHAT,
-        contents: history,
+        contents: [
+          ...history,
+          {
+            role: "user",
+            parts: [{ text: userMessage }]
+          }
+        ],
         config: {
           systemInstruction: "You are Serenity, a compassionate and supportive mental health companion. Your goal is to provide emotional support, use CBT techniques to help users reframe negative thoughts, and offer mindfulness suggestions. If you detect any signs of self-harm or crisis, you MUST provide emergency resources and encourage the user to seek professional help immediately. Keep your responses concise, warm, and empathetic.",
         }
@@ -135,7 +147,7 @@ export default function ChatAI() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {hasApiKey === false && (
+          {hasApiKey === false && window.aistudio && (
             <button
               onClick={handleConnectAI}
               className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-full border border-amber-100 text-xs font-bold hover:bg-amber-100 transition-all"
